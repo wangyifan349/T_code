@@ -58,7 +58,19 @@ train_datagen = ImageDataGenerator(
 #class_mode: 字符串，表示返回的标签数组的类型。可选值有 "categorical"、"binary"、"
 
 
+#
 
+"sparse" 和 "input"。这里是对这些值的解释：
+
+#categorical: 对于多分类问题，返回 one-hot 编码后的标签。例如，对于 3 个类别，对应的 one-hot 编码标签可能为 [1, 0, 0]、[0, 1, 0] 和 [0, 0, 1]。
+
+#binary: 用于二分类问题，返回单个二进制值的标签。例如，对于 2 个类别，对应的标签可能为 0 和 1。
+
+#sparse: 返回整数格式的标签。例如，对于 3 个类别，对应的标签可能为 0、1 和 2。这种方式相比 categorical 更节省内存，但需要在模型定义时使用 SparseCategoricalCrossentropy 损失函数。
+
+#input: 返回与输入图像相同的标签。这在自编码器等无监督学习场景中有用。
+
+#None: 不返回任何标签，仅返回输入图像。这在预测或仅需提取图像特征的情况下有用。
 
 
 
