@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+#chatgpt生成的代码
 import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense
