@@ -1,5 +1,7 @@
 """
 pip install tensorflow tensorflow_hub scipy
+使用的预训练模型
+YAMNet 是一个深度网络，可以从训练它的 AudioSet-YouTube 语料库中预测 521 个音频事件类。它采用 Mobilenet_v1 深度可分离卷积架构。
 """
 
 import tensorflow as tf
