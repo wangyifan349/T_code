@@ -2,6 +2,9 @@
 pip install tensorflow tensorflow_hub scipy
 使用的预训练模型
 YAMNet 是一个深度网络，可以从训练它的 AudioSet-YouTube 语料库中预测 521 个音频事件类。它采用 Mobilenet_v1 深度可分离卷积架构。
+加载 YAMNet 模型，并读取指定的 WAV 文件
+它将音频数据归一化到 [-1.0, 1.0] 的范围内，并使用模型对音频进行分类
+最后可视化
 """
 
 import tensorflow as tf
@@ -9,7 +12,7 @@ import tensorflow_hub as hub
 import numpy as np
 import csv
 from scipy.io import wavfile
-from IPython.display import Audio
+import matplotlib.pyplot as plt
 
 # 确保 TensorFlow 的版本至少是 2
 assert tf.__version__.startswith('2')
@@ -38,12 +41,6 @@ wav_file_name = 'miaow_16k.wav'  # 或者 'speech_whistling2.wav'
 # 读取 WAV 文件
 sample_rate, wav_data = wavfile.read(wav_file_name)
 
-# 显示一些基本信息
-duration = len(wav_data) / sample_rate
-print(f'采样率: {sample_rate} Hz')
-print(f'总时长: {duration:.2f}s')
-print(f'输入大小: {len(wav_data)}')
-
 # 归一化 wav_data 到 [-1.0, 1.0]
 waveform = wav_data / np.iinfo(np.int16).max
 
@@ -57,3 +54,33 @@ inferred_class = class_names[scores_np.mean(axis=0).argmax()]
 
 # 打印主要声音类别
 print(f'主要声音是: {inferred_class}')
+
+# 可视化
+plt.figure(figsize=(10, 6))
+
+# 绘制波形图
+plt.subplot(3, 1, 1)
+plt.plot(waveform)
+plt.xlim([0, len(waveform)])
+plt.title('波形图')
+
+# 绘制对数梅尔频谱图
+plt.subplot(3, 1, 2)
+plt.imshow(spectrogram_np.T, aspect='auto', interpolation='nearest', origin='lower')
+plt.title('对数梅尔频谱图')
+
+# 绘制模型输出得分
+mean_scores = np.mean(scores, axis=0)
+top_n = 10
+top_class_indices = np.argsort(mean_scores)[::-1][:top_n]
+plt.subplot(3, 1, 3)
+plt.imshow(scores_np[:, top_class_indices].T, aspect='auto', interpolation='nearest', cmap='gray_r')
+patch_padding = (0.025 / 2) / 0.01
+plt.xlim([-patch_padding-0.5, scores.shape[0] + patch_padding-0.5])
+yticks = range(0, top_n, 1)
+plt.yticks(yticks, [class_names[top_class_indices[x]] for x in yticks])
+plt.ylim(-0.5 + np.array([top_n, 0]))
+plt.title('模型输出得分')
+
+plt.tight_layout()
+plt.show()
