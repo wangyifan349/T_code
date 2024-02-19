@@ -42,3 +42,7 @@ print(outputs["汇总输出"])
 
 print("\n每个词的嵌入:")
 print(outputs["序列输出"])
+# 输出每个句子的嵌入
+for i, embedding in enumerate(outputs["序列输出"]):
+    print(f"\n嵌入句子 {i+1}:")
+    print(embedding)
