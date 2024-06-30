@@ -1,0 +1,207 @@
+pip install tensorflow tensorflow-hub tensorflow-datasets
+
+
+import tensorflow as tf
+import tensorflow_hub as hub
+import tensorflow_datasets as tfds
+import tensorflow_text as text  # 需要这个库来处理BERT的tokenizer
+
+# 检查是否有可用的GPU
+print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+
+# 加载SQuAD数据集
+dataset, info = tfds.load('squad', with_info=True, batch_size=-1)
+train_dataset = dataset['train']
+validation_dataset = dataset['validation']
+
+# 加载BERT预训练模型和预处理模型
+bert_model_name = "bert_en_uncased_L-12_H-768_A-12"
+tfhub_handle_encoder = f"https://tfhub.dev/tensorflow/{bert_model_name}/3"
+tfhub_handle_preprocess = f"https://tfhub.dev/tensorflow/bert_en_uncased_preprocess/3"
+
+bert_preprocess_model = hub.KerasLayer(tfhub_handle_preprocess)
+bert_model = hub.KerasLayer(tfhub_handle_encoder)
+
+# 数据预处理函数
+def preprocess_data(dataset):
+    questions = []
+    contexts = []
+    start_positions = []
+    end_positions = []
+
+    for example in dataset:
+        questions.append(example['question'].numpy().decode('utf-8'))
+        contexts.append(example['context'].numpy().decode('utf-8'))
+        start_positions.append(example['answers']['answer_start'][0].numpy())
+        end_positions.append(start_positions[-1] + len(example['answers']['text'][0].numpy().decode('utf-8')))
+
+    return questions, contexts, start_positions, end_positions
+
+# 预处理训练和验证数据
+train_questions, train_contexts, train_start_positions, train_end_positions = preprocess_data(train_dataset)
+val_questions, val_contexts, val_start_positions, val_end_positions = preprocess_data(validation_dataset)
+
+# 构建模型
+def build_model():
+    input_word_ids = tf.keras.layers.Input(shape=(None,), dtype=tf.int32, name="input_word_ids")
+    input_mask = tf.keras.layers.Input(shape=(None,), dtype=tf.int32, name="input_mask")
+    input_type_ids = tf.keras.layers.Input(shape=(None,), dtype=tf.int32, name="input_type_ids")
+    
+    bert_inputs = {
+        'input_word_ids': input_word_ids,
+        'input_mask': input_mask,
+        'input_type_ids': input_type_ids
+    }
+    
+    bert_outputs = bert_model(bert_inputs)
+    sequence_output = bert_outputs["sequence_output"]
+    
+    start_logits = tf.keras.layers.Dense(1, name="start_logit", use_bias=False)(sequence_output)
+    start_logits = tf.keras.layers.Flatten()(start_logits)
+    
+    end_logits = tf.keras.layers.Dense(1, name="end_logit", use_bias=False)(sequence_output)
+    end_logits = tf.keras.layers.Flatten()(end_logits)
+    
+    start_probs = tf.keras.layers.Activation(tf.keras.activations.softmax, name="start_probs")(start_logits)
+    end_probs = tf.keras.layers.Activation(tf.keras.activations.softmax, name="end_probs")(end_logits)
+    
+    model = tf.keras.Model(inputs=[input_word_ids, input_mask, input_type_ids],
+                           outputs=[start_probs, end_probs])
+    
+    return model
+
+model = build_model()
+
+# 编译模型
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=5e-5),
+              loss=[tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
+                    tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)],
+              metrics=['accuracy'])
+
+# 数据转换函数
+def create_inputs_targets(questions, contexts, start_positions, end_positions):
+    tokenizer = hub.KerasLayer(tfhub_handle_preprocess)
+    
+    inputs = tokenizer([contexts, questions])
+    targets = {
+        'start_probs': start_positions,
+        'end_probs': end_positions
+    }
+    
+    return inputs, targets
+
+# 准备训练和验证数据
+train_inputs, train_targets = create_inputs_targets(train_questions, train_contexts, train_start_positions, train_end_positions)
+val_inputs, val_targets = create_inputs_targets(val_questions, val_contexts, val_start_positions, val_end_positions)
+
+# 训练模型
+history = model.fit(train_inputs, train_targets,
+                    validation_data=(val_inputs, val_targets),
+                    epochs=3,
+                    batch_size=16)
+
+# 评估模型
+loss, start_acc, end_acc = model.evaluate(val_inputs, val_targets)
+print(f"Validation loss: {loss}")
+print(f"Validation start accuracy: {start_acc}")
+print(f"Validation end accuracy: {end_acc}")
+
+# 使用模型进行预测
+def predict(context, question):
+    inputs = bert_preprocess_model([context], [question])
+    start_probs, end_probs = model.predict(inputs)
+    
+    start_index = tf.argmax(start_probs[0]).numpy()
+    end_index = tf.argmax(end_probs[0]).numpy() + 1
+    
+    answer_tokens = inputs['input_word_ids'][0][start_index:end_index]
+    answer = tokenizer.detokenize(answer_tokens).numpy()
+    
+    return answer.decode('utf-8')
+
+# 示例预测
+context = "TensorFlow is an end-to-end open-source platform for machine learning."
+question = "What is TensorFlow?"
+answer = predict(context, question)
+print(f"Question: {question}")
+print(f"Answer: {answer}")
+
+
+
+import torch
+from transformers import BertTokenizer, BertForSequenceClassification, Trainer, TrainingArguments
+from datasets import load_dataset
+import matplotlib.pyplot as plt
+import numpy as np
+
+# 加载斯坦福情感分析数据集
+dataset = load_dataset("glue", "sst2")
+
+# 加载预训练的BERT模型和分词器
+model_name = "bert-base-uncased"
+tokenizer = BertTokenizer.from_pretrained(model_name)
+model = BertForSequenceClassification.from_pretrained(model_name, num_labels=2)
+
+# 定义一个函数，用于将数据集中的文本数据进行编码
+def tokenize_function(examples):
+    return tokenizer(examples["sentence"], padding="max_length", truncation=True)
+
+# 对数据集进行编码
+encoded_dataset = dataset.map(tokenize_function, batched=True)
+
+# 设置训练参数
+training_args = TrainingArguments(
+    output_dir="./results",          # 保存结果的目录
+    evaluation_strategy="epoch",     # 每个epoch进行一次评估
+    learning_rate=2e-5,              # 学习率
+    per_device_train_batch_size=8,   # 训练时每个设备上的批量大小
+    per_device_eval_batch_size=8,    # 评估时每个设备上的批量大小
+    num_train_epochs=3,              # 训练的epoch数
+    weight_decay=0.01,               # 权重衰减
+)
+
+# 定义Trainer
+trainer = Trainer(
+    model=model,                         # 要微调的模型
+    args=training_args,                  # 训练参数
+    train_dataset=encoded_dataset["train"],  # 训练数据集
+    eval_dataset=encoded_dataset["validation"]  # 验证数据集
+)
+
+# 开始训练
+trainer.train()
+
+# 保存微调后的模型
+trainer.save_model("./fine_tuned_model")
+
+# 加载保存的模型和分词器
+fine_tuned_model = BertForSequenceClassification.from_pretrained("./fine_tuned_model")
+fine_tuned_tokenizer = BertTokenizer.from_pretrained("./fine_tuned_model")
+
+# 定义一个函数用于预测并显示概率分布
+def predict_and_plot(sentence):
+    # 对输入句子进行编码
+    inputs = fine_tuned_tokenizer(sentence, return_tensors='pt', padding=True, truncation=True, max_length=512)
+    # 获取模型输出
+    outputs = fine_tuned_model(**inputs)
+    # 计算概率分布
+    probs = torch.nn.functional.softmax(outputs.logits, dim=-1).detach().numpy()[0]
+
+    # 显示概率分布
+    labels = ["Negative", "Positive"]
+    plt.bar(labels, probs)
+    plt.xlabel("Labels")
+    plt.ylabel("Probability")
+    plt.title("Probability Distribution")
+    plt.show()
+
+    print(f"Sentence: {sentence}")
+    print(f"Predicted probabilities: {probs}")
+    
+# 示例句子
+sentence = "I love using transformers library!"
+predict_and_plot(sentence)
+
+
+
+
